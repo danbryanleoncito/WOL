@@ -1,50 +1,74 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Wake my PC</title>
-<style>
-  :root { --bg:#eef2f5; --ink:#16222d; --mute:#5b6b79; --line:#c9d3dc; --btn:#0e6b63; --ok:#1f9d55; --warn:#c98a12; --bad:#b3372f; }
-  * { box-sizing:border-box; }
-  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  main { width:100%; max-width:420px; }
-  h1 { font-size:2.2rem; line-height:1.1; margin:0 0 6px; letter-spacing:-.03em; }
-  .state { display:flex; align-items:center; gap:8px; color:var(--mute); margin:0 0 28px; }
-  .dot { width:10px; height:10px; border-radius:50%; background:var(--line); }
-  .dot.online { background:var(--ok); } .dot.stale { background:var(--warn); }
-  #wake { width:100%; min-height:96px; border:0; border-radius:28px; background:var(--btn); color:#fff; font-size:1.4rem; font-weight:700; cursor:pointer; box-shadow:0 8px 0 #09463f; transition:transform .08s, box-shadow .08s; }
-  #wake:active { transform:translateY(5px); box-shadow:0 3px 0 #09463f; }
-  #wake:disabled { opacity:.55; cursor:wait; }
-  #msg { min-height:3em; margin:22px 2px 0; color:var(--mute); }
-  #msg.err { color:var(--bad); }
-  form { display:grid; gap:12px; }
-  input { font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); }
-  form button { font:inherit; font-weight:700; padding:12px; border:0; border-radius:12px; background:var(--btn); color:#fff; cursor:pointer; }
-  .link { background:none; border:0; color:var(--mute); text-decoration:underline; cursor:pointer; font:inherit; padding:0; margin-top:26px; }
-  [hidden] { display:none !important; }
-  :focus-visible { outline:3px solid #7aa7ff; outline-offset:2px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10131b">
+  <title>Wake PC | ESP32</title>
+  <style>
+    :root { color-scheme: dark; --bg:#10131b; --panel:#191f2b; --text:#f4f7fb; --muted:#aeb9ca; --accent:#56e0b3; --line:#30394a; --danger:#ffb5b5; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:radial-gradient(circle at top,#202a3a 0,#10131b 52%); color:var(--text); display:flex; justify-content:center; padding:24px 16px calc(24px + env(safe-area-inset-bottom)); }
+    main { width:100%; max-width:480px; margin:auto; }
+    .eyebrow { font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:750; }
+    h1 { font-size:clamp(2rem,8vw,3rem); line-height:1.05; margin:10px 0 8px; letter-spacing:-.04em; }
+    .intro { color:var(--muted); line-height:1.55; margin:0 0 22px; }
+    .panel { border:1px solid var(--line); background:rgba(25,31,43,.92); border-radius:22px; padding:20px; box-shadow:0 18px 50px rgba(0,0,0,.22); }
+    .status-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .status-label { color:var(--muted); font-size:.9rem; }
+    .pill { border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:.8rem; font-weight:700; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#eab85b; margin-right:7px; }
+    .pill.online .dot { background:var(--accent); box-shadow:0 0 10px rgba(86,224,179,.4); }
+    .wake { width:100%; margin:24px 0 14px; border:0; border-radius:18px; min-height:76px; background:var(--accent); color:#08281e; font-size:1.2rem; font-weight:850; cursor:pointer; box-shadow:0 8px 0 #229b78; transition:transform .08s,filter .15s; }
+    .wake:active { transform:translateY(4px); box-shadow:0 4px 0 #229b78; }
+    .wake:disabled { opacity:.6; cursor:wait; }
+    .message { min-height:48px; padding:12px 14px; border-radius:12px; background:#121722; color:var(--muted); line-height:1.45; font-size:.93rem; }
+    .details { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+    .detail { min-width:0; border:1px solid var(--line); border-radius:13px; padding:12px; }
+    .detail .label { color:var(--muted); font-size:.75rem; margin-bottom:5px; }
+    .detail .value { font-weight:700; overflow-wrap:anywhere; font-size:.95rem; }
+    .foot { color:var(--muted); font-size:.8rem; line-height:1.5; margin:18px 3px 0; }
+    .error { color:var(--danger); }
+    form { display:grid; gap:12px; }
+    input { font:inherit; padding:13px 14px; border-radius:12px; border:1px solid var(--line); background:#121722; color:var(--text); }
+    input::placeholder { color:var(--muted); }
+    .btn { border:0; border-radius:12px; min-height:50px; background:var(--accent); color:#08281e; font:inherit; font-weight:800; cursor:pointer; }
+    .link { background:none; border:0; color:var(--muted); text-decoration:underline; cursor:pointer; font:inherit; font-size:.85rem; padding:0; margin:16px 2px 0; }
+    :focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+    [hidden] { display:none !important; }
+    @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+  </style>
 </head>
 <body>
 <main>
-  <h1>Wake my PC</h1>
+  <div class="eyebrow">ESP32 · Wake-on-LAN</div>
+  <h1>Wake your PC.</h1>
+  <p class="intro" id="intro">Sign in to wake your PC from any network.</p>
 
-  <section id="login" hidden>
-    <p class="state">Sign in with the dashboard account.</p>
+  <section class="panel" id="loginPanel" hidden aria-label="Sign in">
     <form id="loginForm">
       <input id="email" type="email" autocomplete="username" placeholder="Email" required>
       <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
-      <button type="submit">Sign in</button>
+      <button class="btn" type="submit">Sign in</button>
     </form>
+    <div class="message" id="loginMsg" role="alert" style="margin-top:14px">Use your dashboard account.</div>
   </section>
 
-  <section id="panel" hidden>
-    <p class="state"><span class="dot" id="dot"></span><span id="esp">Checking ESP32…</span></p>
-    <button id="wake" type="button">Wake PC</button>
-    <p id="msg" role="status" aria-live="polite"></p>
+  <section class="panel" id="controlPanel" hidden aria-label="PC wake controls">
+    <div class="status-row">
+      <div><div class="status-label">ESP32 at home</div><strong>Cloud connection</strong></div>
+      <div class="pill" id="espPill"><span class="dot"></span><span id="espText">Checking…</span></div>
+    </div>
+    <button class="wake" id="wakeButton" type="button">⏻ &nbsp; Wake PC</button>
+    <div class="message" id="message" role="status" aria-live="polite">Ready.</div>
+    <div class="details">
+      <div class="detail"><div class="label">ESP32 last seen</div><div class="value" id="seenValue">—</div></div>
+      <div class="detail"><div class="label">Last result</div><div class="value" id="lastValue">None yet</div></div>
+    </div>
     <button class="link" id="logout" type="button">Sign out</button>
   </section>
+
+  <p class="foot">“Wake packet sent” does not confirm that the PC woke up. Wake-on-LAN must be enabled on the computer, and the PC should be connected to Ethernet for best reliability. The ESP32 checks for new requests every few seconds and ignores requests older than 60 seconds.</p>
 </main>
 
 <script type="module">
@@ -54,65 +78,71 @@ import { getDatabase, ref, set, onValue, serverTimestamp } from "https://www.gst
 
 // Web config is public by design. Security comes from the database rules.
 const firebaseConfig = {
-  apiKey: "AIzaSyCLzeA2WT2ebB3d8oXATeoRRejBU_eyxP8",                       // Firebase console > Project settings > Your apps
+  apiKey: "AIzaSyCLzeA2WT2ebB3d8oXATeoRRejBU_eyxP8",
   authDomain: "esp32-wol-controller.firebaseapp.com",
   databaseURL: "https://esp32-wol-controller-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "esp32-wol-controller"
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getDatabase(app);
+const auth = getAuth(initializeApp(firebaseConfig));
+const db = getDatabase();
 const $ = id => document.getElementById(id);
+const WAKE_LABEL = '⏻ &nbsp; Wake PC';
 let offset = 0, status = {}, pendingId = null, pendingTimer = null, unsubs = [];
 
-function say(text, isErr = false) { $("msg").textContent = text; $("msg").classList.toggle("err", isErr); }
+function say(text, isErr = false) { $('message').textContent = text; $('message').classList.toggle('error', isErr); }
+function idle() { $('wakeButton').disabled = false; $('wakeButton').innerHTML = WAKE_LABEL; }
+function ago(s) { return s < 60 ? s + ' s ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; }
 
 function renderEsp() {
-  const seen = status.lastSeen;
-  if (!seen) { $("dot").className = "dot"; $("esp").textContent = "ESP32 has never reported in"; return; }
-  const age = Math.round((Date.now() + offset - seen) / 1000);
+  $('lastValue').textContent = status.lastResult || 'None yet';
+  if (!status.lastSeen) { $('espPill').classList.remove('online'); $('espText').textContent = 'Never seen'; $('seenValue').textContent = '—'; return; }
+  const age = Math.max(0, Math.round((Date.now() + offset - status.lastSeen) / 1000));
   const online = age < 90;
-  $("dot").className = "dot " + (online ? "online" : "stale");
-  $("esp").textContent = online ? "ESP32 online" : "ESP32 last seen " + Math.round(age / 60) + " min ago";
+  $('espPill').classList.toggle('online', online);
+  $('espText').textContent = online ? 'Online' : 'Offline';
+  $('seenValue').textContent = ago(age);
 }
 
 function watchPending() {
   if (pendingId && status.ackId === pendingId) {
-    clearTimeout(pendingTimer); pendingId = null; $("wake").disabled = false;
-    const ok = (status.lastResult || "").startsWith("wake packet sent");
-    say(ok ? "Wake packet sent. The PC can take up to a minute to start." : "ESP32 replied: " + status.lastResult, !ok);
+    clearTimeout(pendingTimer); pendingId = null; idle();
+    const ok = (status.lastResult || '').startsWith('wake packet sent');
+    say(ok ? 'Wake packet sent. The PC can take up to a minute to start.' : 'ESP32 replied: ' + status.lastResult, !ok);
   }
 }
 
 onAuthStateChanged(auth, user => {
   unsubs.forEach(u => u()); unsubs = [];
-  $("login").hidden = !!user; $("panel").hidden = !user;
+  $('loginPanel').hidden = !!user; $('controlPanel').hidden = !user;
+  $('intro').textContent = user ? 'Tap below to send a wake request to your ESP32 at home. Works from any network.' : 'Sign in to wake your PC from any network.';
   if (!user) return;
-  unsubs.push(onValue(ref(db, ".info/serverTimeOffset"), s => { offset = s.val() || 0; }));
-  unsubs.push(onValue(ref(db, "wol/status"), s => { status = s.val() || {}; renderEsp(); watchPending(); },
-    err => say("Cannot read status: " + err.message, true)));
+  unsubs.push(onValue(ref(db, '.info/serverTimeOffset'), s => { offset = s.val() || 0; }));
+  unsubs.push(onValue(ref(db, 'wol/status'), s => { status = s.val() || {}; renderEsp(); watchPending(); },
+    err => say('Cannot read status: ' + err.message, true)));
 });
-setInterval(renderEsp, 15000);
+setInterval(renderEsp, 5000);
 
-$("loginForm").addEventListener("submit", async e => {
+$('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { await signInWithEmailAndPassword(auth, $("email").value, $("password").value); $("password").value = ""; }
-  catch (err) { alert("Sign-in failed: " + err.code); }
+  $('loginMsg').classList.remove('error'); $('loginMsg').textContent = 'Signing in…';
+  try { await signInWithEmailAndPassword(auth, $('email').value, $('password').value); $('password').value = ''; }
+  catch (err) { $('loginMsg').textContent = 'Sign-in failed: ' + err.code; $('loginMsg').classList.add('error'); }
 });
-$("logout").addEventListener("click", () => signOut(auth));
+$('logout').addEventListener('click', () => signOut(auth));
 
-$("wake").addEventListener("click", async () => {
+$('wakeButton').addEventListener('click', async () => {
   const id = crypto.randomUUID();
-  $("wake").disabled = true; say("Sending…");
+  $('wakeButton').disabled = true; $('wakeButton').textContent = 'Sending wake request…';
+  say('Sending the request…');
   try {
-    await set(ref(db, "wol/command"), { id, ts: serverTimestamp() });
-    pendingId = id; say("Sent. Waiting for the ESP32 (it checks every few seconds)…");
+    await set(ref(db, 'wol/command'), { id, ts: serverTimestamp() });
+    pendingId = id; say('Sent. Waiting for the ESP32 (it checks every few seconds)…');
     pendingTimer = setTimeout(() => {
-      pendingId = null; $("wake").disabled = false;
-      say("No reply from the ESP32. It may be offline; the command expires after 60 s.", true);
+      pendingId = null; idle();
+      say('No reply from the ESP32. It may be offline; the request expires after 60 seconds.', true);
     }, 25000);
-  } catch (err) { $("wake").disabled = false; say("Write failed: " + err.message, true); }
+  } catch (err) { idle(); say('Write failed: ' + err.message, true); }
 });
 </script>
 </body>
