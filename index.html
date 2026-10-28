@@ -1,17 +1,119 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="0; url=/WOL/index.html">
-  <title>WOL Remote Controller</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wake my PC</title>
+<style>
+  :root { --bg:#eef2f5; --ink:#16222d; --mute:#5b6b79; --line:#c9d3dc; --btn:#0e6b63; --ok:#1f9d55; --warn:#c98a12; --bad:#b3372f; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { width:100%; max-width:420px; }
+  h1 { font-size:2.2rem; line-height:1.1; margin:0 0 6px; letter-spacing:-.03em; }
+  .state { display:flex; align-items:center; gap:8px; color:var(--mute); margin:0 0 28px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--line); }
+  .dot.online { background:var(--ok); } .dot.stale { background:var(--warn); }
+  #wake { width:100%; min-height:96px; border:0; border-radius:28px; background:var(--btn); color:#fff; font-size:1.4rem; font-weight:700; cursor:pointer; box-shadow:0 8px 0 #09463f; transition:transform .08s, box-shadow .08s; }
+  #wake:active { transform:translateY(5px); box-shadow:0 3px 0 #09463f; }
+  #wake:disabled { opacity:.55; cursor:wait; }
+  #msg { min-height:3em; margin:22px 2px 0; color:var(--mute); }
+  #msg.err { color:var(--bad); }
+  form { display:grid; gap:12px; }
+  input { font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); }
+  form button { font:inherit; font-weight:700; padding:12px; border:0; border-radius:12px; background:var(--btn); color:#fff; cursor:pointer; }
+  .link { background:none; border:0; color:var(--mute); text-decoration:underline; cursor:pointer; font:inherit; padding:0; margin-top:26px; }
+  [hidden] { display:none !important; }
+  :focus-visible { outline:3px solid #7aa7ff; outline-offset:2px; }
+</style>
 </head>
 <body>
-  <p>Opening the Firebase connection test...</p>
-  <p>
-    If the page does not open automatically,
-    <a href="/WOL/index.html">click here</a>
-  </p>
+<main>
+  <h1>Wake my PC</h1>
+
+  <section id="login" hidden>
+    <p class="state">Sign in with the dashboard account.</p>
+    <form id="loginForm">
+      <input id="email" type="email" autocomplete="username" placeholder="Email" required>
+      <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
+      <button type="submit">Sign in</button>
+    </form>
+  </section>
+
+  <section id="panel" hidden>
+    <p class="state"><span class="dot" id="dot"></span><span id="esp">Checking ESP32…</span></p>
+    <button id="wake" type="button">Wake PC</button>
+    <p id="msg" role="status" aria-live="polite"></p>
+    <button class="link" id="logout" type="button">Sign out</button>
+  </section>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getDatabase, ref, set, onValue, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+// Web config is public by design. Security comes from the database rules.
+const firebaseConfig = {
+  apiKey: "AIzaSyCLzeA2WT2ebB3d8oXATeoRRejBU_eyxP8",                       // Firebase console > Project settings > Your apps
+  authDomain: "esp32-wol-controller.firebaseapp.com",
+  databaseURL: "https://esp32-wol-controller-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "esp32-wol-controller"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const $ = id => document.getElementById(id);
+let offset = 0, status = {}, pendingId = null, pendingTimer = null, unsubs = [];
+
+function say(text, isErr = false) { $("msg").textContent = text; $("msg").classList.toggle("err", isErr); }
+
+function renderEsp() {
+  const seen = status.lastSeen;
+  if (!seen) { $("dot").className = "dot"; $("esp").textContent = "ESP32 has never reported in"; return; }
+  const age = Math.round((Date.now() + offset - seen) / 1000);
+  const online = age < 90;
+  $("dot").className = "dot " + (online ? "online" : "stale");
+  $("esp").textContent = online ? "ESP32 online" : "ESP32 last seen " + Math.round(age / 60) + " min ago";
+}
+
+function watchPending() {
+  if (pendingId && status.ackId === pendingId) {
+    clearTimeout(pendingTimer); pendingId = null; $("wake").disabled = false;
+    const ok = (status.lastResult || "").startsWith("wake packet sent");
+    say(ok ? "Wake packet sent. The PC can take up to a minute to start." : "ESP32 replied: " + status.lastResult, !ok);
+  }
+}
+
+onAuthStateChanged(auth, user => {
+  unsubs.forEach(u => u()); unsubs = [];
+  $("login").hidden = !!user; $("panel").hidden = !user;
+  if (!user) return;
+  unsubs.push(onValue(ref(db, ".info/serverTimeOffset"), s => { offset = s.val() || 0; }));
+  unsubs.push(onValue(ref(db, "wol/status"), s => { status = s.val() || {}; renderEsp(); watchPending(); },
+    err => say("Cannot read status: " + err.message, true)));
+});
+setInterval(renderEsp, 15000);
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try { await signInWithEmailAndPassword(auth, $("email").value, $("password").value); $("password").value = ""; }
+  catch (err) { alert("Sign-in failed: " + err.code); }
+});
+$("logout").addEventListener("click", () => signOut(auth));
+
+$("wake").addEventListener("click", async () => {
+  const id = crypto.randomUUID();
+  $("wake").disabled = true; say("Sending…");
+  try {
+    await set(ref(db, "wol/command"), { id, ts: serverTimestamp() });
+    pendingId = id; say("Sent. Waiting for the ESP32 (it checks every few seconds)…");
+    pendingTimer = setTimeout(() => {
+      pendingId = null; $("wake").disabled = false;
+      say("No reply from the ESP32. It may be offline; the command expires after 60 s.", true);
+    }, 25000);
+  } catch (err) { $("wake").disabled = false; say("Write failed: " + err.message, true); }
+});
+</script>
 </body>
 </html>
